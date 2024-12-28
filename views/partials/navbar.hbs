@@ -1,0 +1,23 @@
+<!-- NAVBAR -->
+<section class="navbar">
+  <nav>
+    <div class="navbar-wrapper">
+      <div class="navbar-brand"><a style="text-decoration: none; color: white;" href="/"><span>Dumbways Task</span></a>
+      </div>
+      <div class="navbar-toggle" onclick="toggleMenu()">
+        <div></div>
+        <div></div>
+        <div></div>
+      </div>
+    </div>
+    <div class="navbar-menu" id="navbarMenu">
+      <a href="/" class="{{#if (eq actived 'home')}}active{{/if}}">Home</a>
+      <a href="/blog" class="{{#if (eq actived 'blog')}}active{{/if}}">Blog</a>
+      <a href="/project" class="{{#if (eq actived 'project')}}active{{/if}}">My Project</a>
+      <a href="/testimonial" class="{{#if (eq actived 'testimonial')}}active{{/if}}">Testimonial</a>
+      <!-- <a href="#contact">Project</a> -->
+      <a href="/contact" class="nav-btn contact-me {{#if (eq actived 'contact')}}active{{/if}}">Contact Me</a>
+    </div>
+  </nav>
+</section>
+<!-- END NAVBAR -->
