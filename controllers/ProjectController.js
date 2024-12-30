@@ -1,20 +1,21 @@
-require('dotenv').config();
+require("dotenv").config();
 const { getRelativeTime, formatDate } = require("../utils/time");
 const { truncateText } = require("../utils/truncateText");
 const path = require("path");
 const fs = require("fs");
 
-const { Sequelize, QueryTypes } = require('sequelize');
-const config = require('../config/config.json');
+const { Sequelize, QueryTypes } = require("sequelize");
+const config = require("../config/config.json");
 
 const sequelize = new Sequelize(config.development);
 
+const { projects } = require("../models");
+
 exports.renderProject = async (req, res) => {
   try {
-    const result = await sequelize.query(
-      "SELECT * FROM projects ORDER BY id",
-      { type: QueryTypes.SELECT }
-    );
+    const result = await sequelize.query('SELECT * FROM projects ORDER BY "createdAt" DESC', {
+      type: QueryTypes.SELECT,
+    });
 
     const data = result.map((project) => {
       const startDate = project.startdate ? new Date(project.startdate) : null;
@@ -28,9 +29,8 @@ exports.renderProject = async (req, res) => {
 
       return {
         ...project,
-        time: startDate ? getRelativeTime(startDate) : "Unknown time",
-        startDate: startDate ? formatDate(startDate) : "Unknown date",
-        duration: durationInMonths > 0 ? `${durationInMonths} bulan` : "0 bulan",
+        duration:
+          durationInMonths > 0 ? `${durationInMonths} bulan` : "0 bulan",
         description: truncateText(project.description, 50),
       };
     });
@@ -66,21 +66,22 @@ exports.searchProject = async (req, res) => {
       return {
         ...project,
         description: truncateText(project.description, 50),
-      }
-    })
+      };
+    });
 
     res.render("project", {
       actived: "project",
       title: "Project | Dumbways Task",
-      projects: data, 
+      projects: data,
       search: query,
     });
   } catch (err) {
     console.error(err.message);
-    res.status(500).render("partials/404", { message: "Internal Server Error" });
+    res
+      .status(500)
+      .render("partials/404", { message: "Internal Server Error" });
   }
 };
-
 
 exports.getProjects = async (req, res) => {
   try {
@@ -151,9 +152,9 @@ exports.getProjectDetails = async (req, res) => {
   }
 };
 
-
 exports.addProject = async (req, res) => {
-  const { projectname, startdate, enddate, description, technologies } = req.body;
+  const { projectname, startdate, enddate, description, technologies } =
+    req.body;
   let imageFileName = null;
 
   const uploadDir = path.resolve(__dirname, "../public/img/project");
@@ -165,7 +166,7 @@ exports.addProject = async (req, res) => {
 
     if (req.files && req.files.image) {
       const imageFile = req.files.image;
-      imageFileName = imageFile.name;
+      imageFileName = `${Date.now()}_${imageFile.name}`;
       const uploadPath = path.join(uploadDir, imageFileName);
 
       await new Promise((resolve, reject) => {
@@ -184,24 +185,33 @@ exports.addProject = async (req, res) => {
       ? technologies
       : technologies.split(",").map((tech) => tech.trim());
 
-    const query = `
-      INSERT INTO projects (projectname, startdate, enddate, description, technologies, image)
-      VALUES ($1, $2, $3, $4, $5, $6)
-    `;
+    // const query = `
+    //   INSERT INTO projects (projectname, startdate, enddate, description, technologies, image)
+    //   VALUES ($1, $2, $3, $4, $5, $6)
+    // `;
 
-    const values = [
+    // const values = [
+    //   projectname,
+    //   startdate,
+    //   enddate,
+    //   description,
+    //   technologiesArray,
+    //   imageFileName,
+    // ];
+
+    // await sequelize.query(query, {
+    //   bind: values,
+    //   type: sequelize.QueryTypes.INSERT,
+    // });
+
+    const newProject = await projects.create({
       projectname,
       startdate,
       enddate,
       description,
-      technologiesArray, 
-      imageFileName,
-    ];
-
-    await sequelize.query(query, {
-      bind: values,
-      type: sequelize.QueryTypes.INSERT,
-    });
+      technologies: technologiesArray,
+      image: imageFileName,
+    })
 
     console.log("Data berhasil disimpan");
     res.redirect("/project?action=add");
@@ -213,24 +223,42 @@ exports.addProject = async (req, res) => {
   }
 };
 
-
 exports.deleteProject = async (req, res) => {
-  try {
-    const result = await sequelize.query(
-      "DELETE FROM projects WHERE id = :id",
-      {
-        replacements: { id: req.params.id },
-        type: sequelize.QueryTypes.DELETE,
-      }
-    );
+  const id = req.params.id;
+  const uploadDir = path.resolve(__dirname, "../public/img/project/");
 
+  try {
+    const result = await projects.findOne({
+      where: { id },
+    });
+
+    if (!result) {
+      return res.status(404).render("partials/404", {
+        message: "Project not found",
+      });
+    }
+
+    const imageFileName = result.image;
+    console.log(imageFileName);
+
+    if (imageFileName) {
+      const imagePath = path.join(uploadDir, imageFileName);
+      if (fs.existsSync(imagePath)) {
+        fs.unlinkSync(imagePath);
+        console.log("Gambar berhasil dihapus.");
+      }
+    }
+    await projects.destroy({
+      where: { id },
+    });
     res.redirect("/project?action=delete");
   } catch (err) {
     console.error("Error saat menghapus proyek:", err.message);
-    res.status(500).render("partials/404", { message: "Internal Server Error" });
+    res
+      .status(500)
+      .render("partials/404", { message: "Internal Server Error" });
   }
 };
-
 
 exports.renderEditProject = async (req, res) => {
   try {
@@ -247,7 +275,7 @@ exports.renderEditProject = async (req, res) => {
     const project = result[0][0];
 
     const formatDate = (date) => {
-      if (!date) return ""; 
+      if (!date) return "";
       const d = new Date(date);
       const year = d.getFullYear();
       const month = String(d.getMonth() + 1).padStart(2, "0");
@@ -284,35 +312,33 @@ exports.renderEditProject = async (req, res) => {
   }
 };
 
-
 exports.editProject = async (req, res) => {
+  const id = req.params.id;
+  const { title, content } = req.body;
+  let imageFileName = null;
+  const uploadDir = path.resolve(__dirname, "../public/img/project/");
+
+  const { projectname, startdate, enddate, description, technologies } =
+    req.body;
   try {
-    const { projectname, startdate, enddate, description, technologies } =
-      req.body;
-    let imageFileName = null;
-
-    const uploadDir = path.resolve(__dirname, "../public/img/project");
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-
     const result = await sequelize.query(
       "SELECT image FROM projects WHERE id = :id",
       { replacements: { id: req.params.id }, type: QueryTypes.SELECT }
     );
+
     const oldImage = result.length > 0 ? result[0].image : null;
 
-    if (req.files && req.files.image && req.files.image.name) {
+    if (req.files && req.files.image) {
       const imageFile = req.files.image;
-      imageFileName = Date.now() + "_" + imageFile.name;
+      imageFileName = `${Date.now()}_${imageFile.name}`;
 
       if (oldImage) {
         const oldImagePath = path.join(uploadDir, oldImage);
         if (fs.existsSync(oldImagePath)) {
           fs.unlinkSync(oldImagePath);
+          console.log("Gambar lama berhasil dihapus");
         }
       }
-
       const uploadPath = path.join(uploadDir, imageFileName);
       await new Promise((resolve, reject) => {
         imageFile.mv(uploadPath, (err) => {
@@ -339,7 +365,7 @@ exports.editProject = async (req, res) => {
           startdate = :startdate,
           enddate = :enddate,
           description = :description,
-          technologies = ARRAY[:technologies]::text[], -- Ubah ke array
+          technologies = ARRAY[:technologies]::text[],
           image = :image
       WHERE id = :id
     `;
@@ -362,6 +388,8 @@ exports.editProject = async (req, res) => {
     res.redirect("/project?action=update");
   } catch (err) {
     console.error("Error saat mengedit proyek:", err.message);
-    res.status(500).render("partials/404", { message: "Internal Server Error" });
+    res
+      .status(500)
+      .render("partials/404", { message: "Internal Server Error" });
   }
 };

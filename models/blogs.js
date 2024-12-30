@@ -17,7 +17,16 @@ module.exports = (sequelize, DataTypes) => {
     title: DataTypes.STRING,
     content: DataTypes.TEXT,
     image: DataTypes.STRING,
-    post_date: DataTypes.DATE
+    post_date: {
+      type: DataTypes.DATE,
+      allowNull: false,
+    },
+    createdAt: {
+      type: DataTypes.DATE,
+    },
+    updatedAt: {
+      type: DataTypes.DATE,
+    },
   }, {
     sequelize,
     modelName: 'blogs',

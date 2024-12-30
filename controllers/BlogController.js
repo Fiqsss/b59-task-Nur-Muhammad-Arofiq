@@ -1,24 +1,12 @@
 const { getRelativeTime, formatDate } = require("../utils/time");
-const { Pool } = require("pg");
 const fs = require("fs");
 const path = require("path");
-const { title } = require("process");
 const { truncateText } = require("../utils/truncateText");
-// const {sequelize} = require("sequelize");
-// const config = require("../config/config");
-// const sequelize = new require(development);
+const { Sequelize, QueryTypes } = require("sequelize");
+const config = require("../config/config");
+const sequelize = new Sequelize(config.development);
 
-const pool = new Pool({
-  user: "postgres",
-  host: "localhost",
-  database: "dumbwaysTask",
-  password: "111",
-  port: 7000,
-});
-
-exports.renderHome = (req, res) => {
-  res.render("home", { actived: "home", title: "Home | Dumbways Task" });
-};
+const { blogs } = require("../models");
 
 exports.searchBlog = async (req, res) => {
   const searchQuery = req.query.search;
@@ -28,12 +16,15 @@ exports.searchBlog = async (req, res) => {
   }
 
   try {
-    const result = await pool.query(
-      "SELECT * FROM blogs WHERE title ILIKE $1 Order by post_date DESC",
-      [`%${searchQuery}%`]
+    const result = await sequelize.query(
+      'SELECT * FROM blogse WHERE title LIKE :search Order by "createdAt" DESC',
+      {
+        type: QueryTypes.SELECT,
+        replacements: { search: `%${searchQuery}%` },
+      }
     );
 
-    const updatedBlogs = result.rows.map((blog) => {
+    const updatedBlogs = result.map((blog) => {
       const postDate = new Date(blog.post_date);
       const formattedDate = postDate
         .toLocaleDateString("en-US", {
@@ -59,27 +50,26 @@ exports.searchBlog = async (req, res) => {
     });
   } catch (err) {
     console.error("Error searching blogs:", err.message);
-    res.status(500).send("Internal Server Error");
+    res.render("partials/404");
   }
 };
 
 exports.renderBlog = async (req, res) => {
   try {
-    const result = await pool.query(
-      "SELECT * FROM blogs order by post_date DESC"
+    const [data] = await sequelize.query(
+      "SELECT * FROM blogs ORDER BY post_date DESC"
     );
 
-    if (result.rows.length === 0) {
+    if (data.length === 0) {
       return res.render("blog", {
         title: "Blog | Dumbways Task",
         blogs: [],
-        message: "No blogs available at the moment.",
       });
     }
 
-    const updatedBlogs = result.rows.map((blog) => {
+    const blogs = data.map((blog) => {
       const postDate = blog.post_date ? new Date(blog.post_date) : new Date();
-      const formattedDate = postDate.toLocaleDateString("en-US", {
+      const formattedDate = postDate.toLocaleDateString("id-ID", {
         day: "numeric",
         month: "long",
         year: "numeric",
@@ -96,30 +86,30 @@ exports.renderBlog = async (req, res) => {
     res.render("blog", {
       actived: "blog",
       title: "Blog | Dumbways Task",
-      blogs: updatedBlogs,
+      blogs: blogs,
     });
   } catch (err) {
-    console.error("Error fetching blogs:", err.message);
-    res.status(500).render("error", {
-      message: "An error occurred while fetching blog posts.",
-      error: err.message,
-    });
+    console.error("Error fetching blog posts:", err.message);
+    res.render("partials/404");
   }
 };
 
 exports.renderDetailBlog = async (req, res) => {
   try {
-    const result = await pool.query("SELECT * FROM blogs WHERE title = $1", [
-      req.params.title,
-    ]);
+    const result = await sequelize.query(
+      `SELECT * FROM blogs WHERE title = '${req.params.title}'`,
+      {
+        type: QueryTypes.SELECT,
+      }
+    );
 
-    if (result.rows.length === 0) {
+    if (result.length === 0) {
       return res.status(404).render("error", {
         message: "Blog not found.",
       });
     }
 
-    const blog = result.rows[0];
+    const blog = result[0];
     const postDate = blog.post_date ? new Date(blog.post_date) : null;
 
     if (!postDate || isNaN(postDate)) {
@@ -134,45 +124,18 @@ exports.renderDetailBlog = async (req, res) => {
       month: "long",
       year: "numeric",
     });
-    
-    
-    blog.time = path.format(postDate);
+
+    blog.time = getRelativeTime(postDate);
     blog.postDate = formattedDate;
+
     res.render("partials/blog/detailblog", {
       title: "Blog | Dumbways Task",
       blog: blog,
-      date:formattedDate
     });
-  } catch (err) {
-    console.error("Error fetching blog details:", err.message);
-    res.status(500).render("error", {
-      message: "An error occurred while fetching blog details.",
-      error: err.message,
-    });
-  }
-};
-
-exports.renderContact = (req, res) => {
-  res.render("contact", {
-    actived: "contact",
-    title: "Contact | Dumbways Task",
-  });
-};
-
-exports.renderTestimonial = (req, res) => {
-  res.render("testimonial", {
-    actived: "testimonial",
-    title: "Testimonial | Dumbways Task",
-  });
-};
-
-exports.getTestimonials = async (req, res) => {
-  try {
-    const result = await pool.query("SELECT * FROM testimonials");
-    res.status(200).json(result.rows);
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: "Internal Server Error" });
+    res.render("partials/404");
+
   }
 };
 
@@ -180,18 +143,36 @@ exports.renderaddBlog = (req, res) => {
   res.render("partials/blog/addblog", { title: "Add Blog | Dumbways Task" });
 };
 exports.addBlog = async (req, res) => {
+  console.log("Request Body:", req.body);
+  console.log("Uploaded Files:", req.files);
+
   let imageFileName = null;
   const { title, content } = req.body;
-  console.log(req.files);
   const uploadDir = path.resolve(__dirname, "../public/img/blog/");
 
   try {
+    if (!title || !content) {
+      return res.status(400).send("Title dan content harus diisi.");
+    }
+
     if (req.files && req.files.image) {
       const imageFile = req.files.image;
-      imageFileName = imageFile.name;
+      const allowedExtensions = /jpg|jpeg|png|gif/;
+      const fileExtension = path.extname(imageFile.name).toLowerCase();
 
+      if (!allowedExtensions.test(fileExtension)) {
+        return res
+          .status(400)
+          .send("Hanya file gambar yang diperbolehkan (jpg, jpeg, png, gif).");
+      }
+
+      imageFileName = `${Date.now()}_${imageFile.name}`;
       const uploadPath = path.join(uploadDir, imageFileName);
-      console.log("Upload Path:", uploadPath);
+
+      // Membuat direktori jika belum ada
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+      }
 
       await new Promise((resolve, reject) => {
         imageFile.mv(uploadPath, (err) => {
@@ -199,82 +180,79 @@ exports.addBlog = async (req, res) => {
             console.error("Gagal mengunggah gambar:", err);
             reject(err);
           } else {
-            console.log("Gambar berhasil diunggah");
+            console.log("Gambar berhasil diunggah ke:", uploadPath);
             resolve();
           }
         });
       });
     }
-
     const postDate = new Date();
+    const newBlog = await blogs.create({
+      title,
+      content,
+      image: imageFileName,
+      post_date: postDate,
+    });
 
-    const query = `
-      INSERT INTO blogs (title, content, image, post_date)
-      VALUES ($1, $2, $3, $4)
-    `;
-    const values = [title, content, imageFileName, postDate];
-
-    await pool.query(query, values);
-
-    console.log("Blog berhasil disimpan ke database");
-    res.redirect("/blog?action=add");
+    console.log("Blog berhasil disimpan ke database:", newBlog);
+    res.redirect("/blog?action=add"); // Mengalihkan setelah berhasil
   } catch (error) {
     console.error("Gagal menambahkan blog:", error.message);
-    res.status(500).send("Gagal menambahkan blog");
+    res.status(500).send("Gagal menambahkan blog. Silakan coba lagi.");
   }
-  // if (req.files && req.files.image) {
-  //   const imageFile = req.files.image;
-  //   imageFileName = imageFile.name;
-  //
-  //   const uploadPath = path.join(uploadDir, imageFileName);
-  //   console.log("Upload Path:", uploadPath);
-  //
-  //   imageFile.mv(uploadPath, (err) => {
-  //     if (err) {
-  //       console.error("Gagal mengunggah gambar:", err);
-  //       return res.status(500).send("Gagal mengunggah gambar");
-  //     }
-  //
-  //     console.log("Gambar berhasil diunggah");
-  //
-  //     const blog = {
-  //       author: "Nur Muhammad Arofiq",
-  //       title: title,
-  //       content: content,
-  //       image: imageFileName,
-  //       postDate: new Date().toLocaleString(),
-  //       time: getRelativeTime(new Date()),
-  //     };
-  //
-  //     blogs.push(blog);
-  //     res.redirect("/blog");
-  //   });
-  // } else {
-  //   console.log("Tidak ada gambar yang diupload");
-  //   res.redirect("/blog");
-  // }
 };
 
 exports.deleteBlog = async (req, res) => {
+  const id = req.params.id;
+  const uploadDir = path.resolve(__dirname, "../public/img/blog/");
+
   try {
-    const result = await pool.query("DELETE FROM blogs WHERE id = $1", [
-      req.params.id,
-    ]);
+    const blog = await blogs.findOne({
+      where: { id },
+    });
+
+    if (!blog) {
+      return res.status(404).send("Blog tidak ditemukan");
+    }
+
+    const imageDestroy = blog.image;
+
+    await blogs.destroy({
+      where: { id },
+    });
+
+    if (imageDestroy) {
+      const imagePath = path.join(uploadDir, imageDestroy);
+      if (fs.existsSync(imagePath)) {
+        fs.unlinkSync(imagePath);
+        console.log("Gambar berhasil dihapus.");
+      }
+    }
+
     res.redirect("/blog?action=delete");
   } catch (err) {
-    console.error(err.message);
+    console.error("Gagal menghapus blog:", err.message);
     res.status(500).render("partials/404");
   }
 };
 
 exports.rendereditBlog = async (req, res) => {
   try {
-    const result = await pool.query("SELECT * FROM blogs WHERE id = $1", [
-      req.params.id,
-    ]);
+    const [results] = await sequelize.query(
+      `SELECT * FROM blogs WHERE id = '${req.params.id}'`,
+      {
+        type: sequelize.QueryTypes.SELECT,
+      }
+    );
+    if (results.length === 0) {
+      return res.status(404).render("partials/404");
+      message: "Blog not found.";
+    }
+
+    blog = results;
     res.render("partials/blog/editblog", {
       title: "Edit Blog | Dumbways Task",
-      blog: result.rows[0],
+      blog,
     });
   } catch (err) {
     console.error(err.message);
@@ -290,22 +268,30 @@ exports.editBlog = async (req, res) => {
   const uploadDir = path.resolve(__dirname, "../public/img/blog/");
 
   try {
-    const result = await pool.query("SELECT image FROM blogs WHERE id = $1", [
-      id,
-    ]);
-    const oldImage = result.rows[0]?.image;
+    const result = await sequelize.query(
+      `SELECT image FROM blogs WHERE id = :id`,
+      {
+        replacements: { id },
+        type: QueryTypes.SELECT,
+      }
+    );
+    const oldImage = result.length > 0 ? result[0].image : null;
+    console.log("Gambar lama:", oldImage);
+    console.log("result :", result.length);
+    console.log(req.files);
 
     if (req.files && req.files.image) {
       const imageFile = req.files.image;
-      imageFileName = imageFile.name;
+      imageFileName = `${Date.now()}_${imageFile.name}`;
 
       if (oldImage) {
         const oldImagePath = path.join(uploadDir, oldImage);
         if (fs.existsSync(oldImagePath)) {
-          fs.unlinkSync(oldImagePath); // Menghapus gambar lama
+          fs.unlinkSync(oldImagePath);
           console.log("Gambar lama berhasil dihapus");
         }
       }
+
       const uploadPath = path.join(uploadDir, imageFileName);
       await new Promise((resolve, reject) => {
         imageFile.mv(uploadPath, (err) => {
@@ -324,12 +310,20 @@ exports.editBlog = async (req, res) => {
 
     const query = `
       UPDATE blogs
-      SET title = $1, content = $2, image = $3
-      WHERE id = $4
+      SET title = :title, content = :content, image = :image
+      WHERE id = :id
     `;
-    const values = [title, content, imageFileName, id];
+    const values = {
+      title,
+      content,
+      image: imageFileName,
+      id,
+    };
 
-    await pool.query(query, values);
+    await sequelize.query(query, {
+      replacements: values,
+      type: QueryTypes.UPDATE,
+    });
 
     console.log("Blog berhasil diupdate");
     res.redirect(`/blog?action=update`);
@@ -338,8 +332,4 @@ exports.editBlog = async (req, res) => {
     res.status(500).send("Gagal memperbarui blog");
   }
 };
-
 // 404 Controller
-exports.render404 = (req, res) => {
-  res.status(404).render("partials/404");
-};

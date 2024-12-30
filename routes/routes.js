@@ -1,11 +1,16 @@
 const express = require("express");
+
 const {
   renderHome,
-  renderBlog,
-  renderContact,
   renderTestimonial,
   getTestimonials,
+  renderContact,
   render404,
+
+} = require("../controllers/HomeContactController");
+
+const {
+  renderBlog,
   deleteBlog,
   addBlog,
   renderaddBlog,
@@ -18,11 +23,11 @@ const {
 const {
   renderProject,
   renderAddProject,
+  renderEditProject,
   getProjects,
   getProjectDetails,
   addProject,
   deleteProject,
-  renderEditProject,
   searchProject,
   editProject
 } = require("../controllers/ProjectController");
@@ -30,6 +35,13 @@ const {
 const router = express.Router();
 
 router.get("/", renderHome);
+
+
+// Home Contact Testimoni 
+router.get("/contact", renderContact);
+router.get("/testimonial", renderTestimonial);
+router.get("/api/testimonials", getTestimonials);
+// END Home Contact Testimoni 
 
 // BLOG
 router.get("/blog", renderBlog);
@@ -53,12 +65,6 @@ router.get("/editproject/:id", renderEditProject);
 router.post("/editproject/:id", editProject);
 router.get("/searchproject", searchProject);
 // END PROJECT
-
-router.get("/contact", renderContact);
-router.get("/testimonial", renderTestimonial);
-
-router.get("/api/testimonials", getTestimonials);
-
 
 router.use("*", render404);
 
